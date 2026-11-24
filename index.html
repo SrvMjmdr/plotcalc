@@ -1,34 +1,975 @@
-const CACHE_NAME = 'plotcalc-offline-v1';
-const CORE_ASSETS = ['./', './index.html'];
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>PlotCalc — Katha, Chatak & Sq.Ft Calculator</title>
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS))
-  );
-  self.skipWaiting();
-});
+  <!-- PWA & Mobile Home Screen App Meta Tags -->
+  <meta name="theme-color" content="#020617" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="PlotCalc" />
+  <link id="appFavicon" rel="icon" type="image/png" />
+  <link id="appleTouchIcon" rel="apple-touch-icon" />
+  <link id="pwaManifestLink" rel="manifest" />
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
-});
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
 
-self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
-        if (response && (response.status === 200 || response.type === 'opaque')) {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
         }
-        return response;
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background-color: #020617;
+      color: #f8fafc;
+      transition: background-color 0.3s ease, background-image 0.3s ease;
+      overflow-x: hidden;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    /* Prevent double-tap zoom and remove mobile tap flash on interactive controls */
+    button, input {
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Hide default number spinners so custom +/- buttons look crisp */
+    .no-spinner::-webkit-inner-spin-button,
+    .no-spinner::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .no-spinner {
+      -moz-appearance: textfield;
+    }
+
+    /* Smooth panel entrance animation */
+    @keyframes panelFadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .tab-panel-animate {
+      animation: panelFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Subtle pulse/scale micro-animation when primary results update */
+    @keyframes valuePulsePop {
+      0% {
+        transform: scale(1);
+      }
+      45% {
+        transform: scale(1.035);
+      }
+      100% {
+        transform: scale(1);
+      }
+    }
+    .value-pulse {
+      display: inline-block;
+      animation: valuePulsePop 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    /* Sub-tab Styling inside Plot Area (Dark Blue Theme) */
+    .area-tab-active {
+      background: #2563eb;
+      color: #ffffff;
+      font-weight: 700;
+      box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
+    }
+    .area-tab-inactive {
+      background: transparent;
+      color: #94a3b8;
+      font-weight: 600;
+    }
+    .area-tab-inactive:hover {
+      color: #93c5fd;
+      background: rgba(30, 41, 59, 0.75);
+    }
+  </style>
+</head>
+<body id="appBody" class="font-sans min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top,_rgba(30,58,138,0.22),_transparent_65%)] text-slate-100 pb-[calc(2.5rem+env(safe-area-inset-bottom))] selection:bg-blue-500/30 selection:text-blue-200">
+
+  <!-- 1. Top Header: Compact Mobile-Friendly Dark Glass Bar -->
+  <header class="bg-slate-900/90 backdrop-blur-md border-b border-slate-800/90 sticky top-0 z-20 pt-[env(safe-area-inset-top)]">
+    <div class="max-w-2xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3.5 flex items-center justify-center sm:justify-start">
+      <div class="inline-flex items-center gap-2">
+        <i id="headerPinIcon" class="fa-solid fa-location-dot text-blue-400 text-lg sm:text-xl transition-colors duration-300"></i>
+        <h1 class="text-lg sm:text-xl font-extrabold tracking-tight text-slate-50">PlotCalc</h1>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="max-w-2xl mx-auto px-3 sm:px-4 pt-3.5 sm:pt-5 space-y-3.5 sm:space-y-5">
+
+    <!-- 2. Thumb-Friendly Color-Coded 3-Tab Navigation Bar -->
+    <nav aria-label="Calculator Modes" class="bg-slate-900/95 p-1.5 rounded-2xl border border-slate-800 shadow-lg shadow-black/25 grid grid-cols-3 gap-1.5">
+      <!-- Tab 1: Area (Blue Theme) -->
+      <button id="mainTabBtnArea" type="button" onclick="switchMainTab('area')"
+        class="bg-blue-600 text-white font-bold shadow-md shadow-blue-600/25 min-h-[46px] py-2.5 px-2 sm:px-4 rounded-xl text-xs sm:text-sm transition-all duration-200 flex items-center justify-center gap-1.5 truncate cursor-pointer">
+        <span id="tabDotArea" class="w-2 h-2 rounded-full bg-white shrink-0"></span>
+        <span class="truncate">Area</span>
+      </button>
+
+      <!-- Tab 2: Price (Emerald Theme) -->
+      <button id="mainTabBtnTotal" type="button" onclick="switchMainTab('total')"
+        class="text-slate-400 hover:text-emerald-300 hover:bg-emerald-950/50 font-semibold min-h-[46px] py-2.5 px-2 sm:px-4 rounded-xl text-xs sm:text-sm transition-all duration-200 flex items-center justify-center gap-1.5 truncate cursor-pointer">
+        <span id="tabDotTotal" class="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+        <span class="truncate">Price</span>
+      </button>
+
+      <!-- Tab 3: Rate (Rose Theme) -->
+      <button id="mainTabBtnKatha" type="button" onclick="switchMainTab('katha')"
+        class="text-slate-400 hover:text-rose-300 hover:bg-rose-950/50 font-semibold min-h-[46px] py-2.5 px-2 sm:px-4 rounded-xl text-xs sm:text-sm transition-all duration-200 flex items-center justify-center gap-1.5 truncate cursor-pointer">
+        <span id="tabDotKatha" class="w-2 h-2 rounded-full bg-rose-400 shrink-0"></span>
+        <span class="truncate">Rate</span>
+      </button>
+    </nav>
+
+    <!-- ========================================================== -->
+    <!-- TAB 1: AREA (DARK BLUE THEME — MOBILE 2-ROW LAYOUT)        -->
+    <!-- ========================================================== -->
+    <section id="mainPanelArea" class="tab-panel-animate bg-slate-900 rounded-2xl sm:rounded-3xl border border-blue-500/25 p-3.5 sm:p-6 shadow-xl shadow-black/30 space-y-3.5 sm:space-y-5">
+      <!-- Card Header & 3 Synchronized Area Sub-Tabs -->
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3">
+        <div class="flex items-center gap-2">
+          <span class="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-400 flex items-center justify-center shrink-0">
+            <i class="fa-solid fa-vector-square text-xs sm:text-sm"></i>
+          </span>
+          <h2 class="text-base sm:text-lg font-bold text-slate-50 tracking-tight">Area</h2>
+        </div>
+
+        <div class="bg-slate-950/90 p-1 rounded-xl border border-slate-800 grid grid-cols-3 gap-1 sm:w-auto w-full">
+          <button id="tabBtnKatha" type="button" onclick="switchAreaTab('katha')"
+            class="area-tab-active min-h-[38px] py-1.5 px-1.5 sm:px-2.5 rounded-lg text-[11px] sm:text-xs transition-all text-center cursor-pointer">
+            <span class="sm:hidden">Katha/Chatak</span>
+            <span class="hidden sm:inline">Katha & Chatak</span>
+          </button>
+          <button id="tabBtnSqft" type="button" onclick="switchAreaTab('sqft')"
+            class="area-tab-inactive min-h-[38px] py-1.5 px-1.5 sm:px-2.5 rounded-lg text-[11px] sm:text-xs transition-all text-center cursor-pointer">
+            <span class="sm:hidden">Direct Sq.Ft</span>
+            <span class="hidden sm:inline">Direct Sq. Ft.</span>
+          </button>
+          <button id="tabBtnDim" type="button" onclick="switchAreaTab('dim')"
+            class="area-tab-inactive min-h-[38px] py-1.5 px-1.5 sm:px-2.5 rounded-lg text-[11px] sm:text-xs transition-all text-center cursor-pointer">
+            <span class="sm:hidden">L × B (ft)</span>
+            <span class="hidden sm:inline">Length × Breadth</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- SUB-TAB 1: KATHA & CHATAK -->
+      <div id="panelKatha" class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3.5">
+        <!-- Katha Input -->
+        <div class="bg-slate-950/65 border border-slate-800/90 rounded-2xl p-2.5 sm:p-3">
+          <div class="flex justify-between items-center gap-1 mb-1.5">
+            <label for="inputKatha" class="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400">Katha</label>
+            <span id="kathaSubSqft" class="text-[10px] sm:text-[11px] font-mono font-semibold text-blue-400 truncate">720 sq.ft</span>
+          </div>
+          <div class="flex items-center gap-1 sm:gap-1.5">
+            <button type="button" onclick="stepAreaField('inputKatha', -1, 'katha')" aria-label="Decrease Katha"
+              class="w-8 sm:w-9 h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-blue-950/70 hover:border-blue-500/40 active:scale-95 text-blue-300 font-mono font-bold text-base transition-all cursor-pointer select-none shrink-0">
+              -
+            </button>
+            <input id="inputKatha" type="number" inputmode="decimal" step="any" min="0" value="1" placeholder="1" oninput="onKathaInputChange()"
+              class="no-spinner w-full min-w-0 bg-slate-900 text-slate-50 px-1.5 sm:px-2 py-2.5 rounded-xl border border-slate-700 font-mono text-base sm:text-lg font-bold text-center focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25" />
+            <button type="button" onclick="stepAreaField('inputKatha', 1, 'katha')" aria-label="Increase Katha"
+              class="w-8 sm:w-9 h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-blue-950/70 hover:border-blue-500/40 active:scale-95 text-blue-300 font-mono font-bold text-base transition-all cursor-pointer select-none shrink-0">
+              +
+            </button>
+          </div>
+        </div>
+
+        <!-- Chatak Input -->
+        <div class="bg-slate-950/65 border border-slate-800/90 rounded-2xl p-2.5 sm:p-3">
+          <div class="flex justify-between items-center gap-1 mb-1.5">
+            <label for="inputChatak" class="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400">Chatak</label>
+            <span id="chatakSubSqft" class="text-[10px] sm:text-[11px] font-mono font-semibold text-blue-400 truncate">180 sq.ft</span>
+          </div>
+          <div class="flex items-center gap-1 sm:gap-1.5">
+            <button type="button" onclick="stepAreaField('inputChatak', -1, 'katha')" aria-label="Decrease Chatak"
+              class="w-8 sm:w-9 h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-blue-950/70 hover:border-blue-500/40 active:scale-95 text-blue-300 font-mono font-bold text-base transition-all cursor-pointer select-none shrink-0">
+              -
+            </button>
+            <input id="inputChatak" type="number" inputmode="decimal" step="any" min="0" value="4" placeholder="4" oninput="onKathaInputChange()"
+              class="no-spinner w-full min-w-0 bg-slate-900 text-slate-50 px-1.5 sm:px-2 py-2.5 rounded-xl border border-slate-700 font-mono text-base sm:text-lg font-bold text-center focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25" />
+            <button type="button" onclick="stepAreaField('inputChatak', 1, 'katha')" aria-label="Increase Chatak"
+              class="w-8 sm:w-9 h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-blue-950/70 hover:border-blue-500/40 active:scale-95 text-blue-300 font-mono font-bold text-base transition-all cursor-pointer select-none shrink-0">
+              +
+            </button>
+          </div>
+        </div>
+
+        <!-- Extra Sq.Ft Input -->
+        <div class="col-span-2 sm:col-span-1 bg-slate-950/65 border border-slate-800/90 rounded-2xl p-2.5 sm:p-3">
+          <div class="flex justify-between items-center gap-1 mb-1.5">
+            <label for="inputExtraSqft" class="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400">Extra Sq.Ft</label>
+            <span id="extraSubSqft" class="text-[10px] sm:text-[11px] font-mono font-semibold text-blue-400">+ 0 sq.ft</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button type="button" onclick="stepAreaField('inputExtraSqft', -10, 'katha')" aria-label="Decrease Extra Sq.Ft"
+              class="w-9 h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-blue-950/70 hover:border-blue-500/40 active:scale-95 text-blue-300 font-mono font-bold text-base transition-all cursor-pointer select-none shrink-0">
+              -
+            </button>
+            <input id="inputExtraSqft" type="number" inputmode="decimal" step="any" min="0" value="0" placeholder="0" oninput="onKathaInputChange()"
+              class="no-spinner w-full min-w-0 bg-slate-900 text-slate-50 px-2 py-2.5 rounded-xl border border-slate-700 font-mono text-base sm:text-lg font-bold text-center focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25" />
+            <button type="button" onclick="stepAreaField('inputExtraSqft', 10, 'katha')" aria-label="Increase Extra Sq.Ft"
+              class="w-9 h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-blue-950/70 hover:border-blue-500/40 active:scale-95 text-blue-300 font-mono font-bold text-base transition-all cursor-pointer select-none shrink-0">
+              +
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUB-TAB 2: DIRECT SQ. FT. -->
+      <div id="panelSqft" class="hidden grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3.5">
+        <div class="bg-slate-950/65 border border-slate-800/90 rounded-2xl p-2.5 sm:p-3">
+          <label for="inputTotalSqft" class="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+            Base Area (Sq.Ft)
+          </label>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="stepAreaField('inputTotalSqft', -45, 'sqft')" aria-label="Decrease Base Area"
+              class="w-10 h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-blue-950/70 hover:border-blue-500/40 active:scale-95 text-blue-300 font-mono font-bold text-base transition-all cursor-pointer select-none shrink-0">
+              -
+            </button>
+            <input id="inputTotalSqft" type="number" inputmode="decimal" step="any" min="0" value="900" placeholder="900" oninput="onDirectSqftChange()"
+              class="no-spinner w-full min-w-0 bg-slate-900 text-slate-50 px-3 py-2.5 rounded-xl border border-slate-700 font-mono text-base sm:text-lg font-bold text-center focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25" />
+            <button type="button" onclick="stepAreaField('inputTotalSqft', 45, 'sqft')" aria-label="Increase Base Area"
+              class="w-10 h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-blue-950/70 hover:border-blue-500/40 active:scale-95 text-blue-300 font-mono font-bold text-base transition-all cursor-pointer select-none shrink-0">
+              +
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-slate-950/65 border border-slate-800/90 rounded-2xl p-2.5 sm:p-3">
+          <label for="inputDirectExtraSqft" class="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+            Extra Sq.Ft
+          </label>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="stepAreaField('inputDirectExtraSqft', -10, 'sqft')" aria-label="Decrease Extra Sq.Ft"
+              class="w-10 h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-blue-950/70 hover:border-blue-500/40 active:scale-95 text-blue-300 font-mono font-bold text-base transition-all cursor-pointer select-none shrink-0">
+              -
+            </button>
+            <input id="inputDirectExtraSqft" type="number" inputmode="decimal" step="any" min="0" value="0" placeholder="0" oninput="onDirectSqftChange()"
+              class="no-spinner w-full min-w-0 bg-slate-900 text-slate-50 px-3 py-2.5 rounded-xl border border-slate-700 font-mono text-base sm:text-lg font-bold text-center focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25" />
+            <button type="button" onclick="stepAreaField('inputDirectExtraSqft', 10, 'sqft')" aria-label="Increase Extra Sq.Ft"
+              class="w-10 h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-blue-950/70 hover:border-blue-500/40 active:scale-95 text-blue-300 font-mono font-bold text-base transition-all cursor-pointer select-none shrink-0">
+              +
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUB-TAB 3: LENGTH × BREADTH -->
+      <div id="panelDim" class="hidden grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3.5">
+        <div class="bg-slate-950/65 border border-slate-800/90 rounded-2xl p-2.5 sm:p-3">
+          <label for="inputLength" class="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+            Length (ft)
+          </label>
+          <div class="flex items-center gap-1 sm:gap-1.5">
+            <button type="button" onclick="stepAreaField('inputLength', -1, 'dim')" aria-label="Decrease Length"
+              class="w-8 sm:w-9 h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-blue-950/70 hover:border-blue-500/40 active:scale-95 text-blue-300 font-mono font-bold text-base transition-all cursor-pointer select-none shrink-0">
+              -
+            </button>
+            <input id="inputLength" type="number" inputmode="decimal" step="any" min="0" value="32" placeholder="32" oninput="onDimensionChange()"
+              class="no-spinner w-full min-w-0 bg-slate-900 text-slate-50 px-1.5 sm:px-2 py-2.5 rounded-xl border border-slate-700 font-mono text-base sm:text-lg font-bold text-center focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25" />
+            <button type="button" onclick="stepAreaField('inputLength', 1, 'dim')" aria-label="Increase Length"
+              class="w-8 sm:w-9 h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-blue-950/70 hover:border-blue-500/40 active:scale-95 text-blue-300 font-mono font-bold text-base transition-all cursor-pointer select-none shrink-0">
+              +
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-slate-950/65 border border-slate-800/90 rounded-2xl p-2.5 sm:p-3">
+          <label for="inputBreadth" class="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+            Breadth (ft)
+          </label>
+          <div class="flex items-center gap-1 sm:gap-1.5">
+            <button type="button" onclick="stepAreaField('inputBreadth', -1, 'dim')" aria-label="Decrease Breadth"
+              class="w-8 sm:w-9 h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-blue-950/70 hover:border-blue-500/40 active:scale-95 text-blue-300 font-mono font-bold text-base transition-all cursor-pointer select-none shrink-0">
+              -
+            </button>
+            <input id="inputBreadth" type="number" inputmode="decimal" step="any" min="0" value="25" placeholder="25" oninput="onDimensionChange()"
+              class="no-spinner w-full min-w-0 bg-slate-900 text-slate-50 px-1.5 sm:px-2 py-2.5 rounded-xl border border-slate-700 font-mono text-base sm:text-lg font-bold text-center focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25" />
+            <button type="button" onclick="stepAreaField('inputBreadth', 1, 'dim')" aria-label="Increase Breadth"
+              class="w-8 sm:w-9 h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-blue-950/70 hover:border-blue-500/40 active:scale-95 text-blue-300 font-mono font-bold text-base transition-all cursor-pointer select-none shrink-0">
+              +
+            </button>
+          </div>
+        </div>
+
+        <div class="col-span-2 sm:col-span-1 bg-slate-950/65 border border-slate-800/90 rounded-2xl p-2.5 sm:p-3">
+          <label for="inputDimExtraSqft" class="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+            Extra Sq.Ft
+          </label>
+          <div class="flex items-center gap-1.5">
+            <button type="button" onclick="stepAreaField('inputDimExtraSqft', -10, 'dim')" aria-label="Decrease Extra Sq.Ft"
+              class="w-9 h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-blue-950/70 hover:border-blue-500/40 active:scale-95 text-blue-300 font-mono font-bold text-base transition-all cursor-pointer select-none shrink-0">
+              -
+            </button>
+            <input id="inputDimExtraSqft" type="number" inputmode="decimal" step="any" min="0" value="100" placeholder="100" oninput="onDimensionChange()"
+              class="no-spinner w-full min-w-0 bg-slate-900 text-slate-50 px-2 py-2.5 rounded-xl border border-slate-700 font-mono text-base sm:text-lg font-bold text-center focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25" />
+            <button type="button" onclick="stepAreaField('inputDimExtraSqft', 10, 'dim')" aria-label="Increase Extra Sq.Ft"
+              class="w-9 h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-blue-950/70 hover:border-blue-500/40 active:scale-95 text-blue-300 font-mono font-bold text-base transition-all cursor-pointer select-none shrink-0">
+              +
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Total Area Summary Box: Highlights Katha & Chatak First, then Sq.Ft -->
+      <div class="bg-gradient-to-br from-blue-950/75 via-slate-900 to-slate-950 border border-blue-500/35 rounded-2xl p-3.5 sm:p-5 space-y-2.5 sm:space-y-3 shadow-inner">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-[11px] font-bold uppercase tracking-widest text-blue-400">
+            TOTAL AREA
+          </span>
+          <span id="summaryDecimalKatha" class="text-[11px] sm:text-xs font-mono tabular-nums font-semibold text-blue-300 bg-blue-500/10 border border-blue-500/25 px-2.5 py-0.5 rounded-full">
+            (1.25 Katha)
+          </span>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+          <!-- Primary Highlight: Katha & Chatak First -->
+          <div id="summaryKathaChatak" class="text-xl sm:text-3xl font-extrabold tracking-tight text-white">
+            1 Katha 4 Chatak
+          </div>
+
+          <!-- Secondary Highlight: Total Sq.Ft -->
+          <div class="inline-flex items-baseline gap-1.5 bg-slate-950/85 border border-slate-800 px-3 py-1.5 rounded-xl">
+            <span id="summaryTotalSqft" class="text-base sm:text-xl font-extrabold font-mono tabular-nums text-blue-400">900</span>
+            <span class="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400">sq.ft</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================== -->
+    <!-- TAB 2: PRICE (DARK EMERALD THEME — 3 STACKED BOXES)        -->
+    <!-- ========================================================== -->
+    <section id="mainPanelTotal" class="hidden tab-panel-animate bg-slate-900 rounded-2xl sm:rounded-3xl border border-emerald-500/25 p-3.5 sm:p-6 shadow-xl shadow-black/30 space-y-3.5 sm:space-y-4">
+      <div class="flex items-center justify-between gap-2 pb-0.5">
+        <h2 class="text-base sm:text-lg font-bold text-slate-50 tracking-tight">Price</h2>
+        <button type="button" onclick="switchMainTab('area')" title="Click to edit Area"
+          class="inline-flex items-center gap-1.5 text-[11px] sm:text-xs font-semibold text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 px-2.5 sm:px-3 py-1.5 rounded-full transition-colors cursor-pointer max-w-[75%]">
+          <span id="areaPillTotal" class="truncate">1 Katha 4 Chatak · 900 sq.ft</span>
+          <i class="fa-solid fa-pen text-[9px] sm:text-[10px] opacity-80 shrink-0"></i>
+        </button>
+      </div>
+
+      <!-- BOX 1 (Input Box): Price per Katha -->
+      <div class="bg-slate-950/65 border border-slate-800 rounded-2xl p-3.5 sm:p-5 space-y-2.5">
+        <div class="flex justify-between items-center gap-2">
+          <label for="inputRatePerKathaLakhs" class="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400">
+            Price per Katha
+          </label>
+          <span id="badgeRateRupeesRight" class="text-[11px] sm:text-xs font-mono tabular-nums font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 px-2 sm:px-2.5 py-0.5 rounded-md truncate">
+            ₹ 25,00,000 / Katha
+          </span>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-2.5">
+          <button type="button" onclick="adjustInputBy('inputRatePerKathaLakhs', -1)" aria-label="Decrease Price per Katha by 1 Lakh"
+            class="w-12 sm:w-14 min-h-[48px] py-2.5 rounded-xl bg-slate-800 border border-slate-700 hover:border-emerald-500/50 hover:bg-emerald-950/60 active:scale-95 text-slate-100 hover:text-emerald-300 font-mono text-sm sm:text-base font-bold transition-all cursor-pointer select-none shrink-0">
+            -1
+          </button>
+
+          <div class="relative flex-1 min-w-0">
+            <input id="inputRatePerKathaLakhs" type="number" inputmode="decimal" step="any" min="0" value="25" placeholder="25" oninput="calculateAll()"
+              class="no-spinner w-full min-w-0 bg-slate-900 text-white pl-3 pr-14 sm:pr-16 py-2.5 sm:py-3 rounded-xl border border-slate-700 font-mono tabular-nums text-lg sm:text-xl font-extrabold text-center focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/25" />
+            <span class="absolute right-2.5 sm:right-3 top-1/2 -translate-y-1/2 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-1.5 sm:px-2 py-0.5 rounded-md pointer-events-none">
+              Lakh
+            </span>
+          </div>
+
+          <button type="button" onclick="adjustInputBy('inputRatePerKathaLakhs', 1)" aria-label="Increase Price per Katha by 1 Lakh"
+            class="w-12 sm:w-14 min-h-[48px] py-2.5 rounded-xl bg-slate-800 border border-slate-700 hover:border-emerald-500/50 hover:bg-emerald-950/60 active:scale-95 text-slate-100 hover:text-emerald-300 font-mono text-sm sm:text-base font-bold transition-all cursor-pointer select-none shrink-0">
+            +1
+          </button>
+        </div>
+      </div>
+
+      <!-- BOX 2 (Primary Result — Emerald Highlighted): Total Plot Price -->
+      <div class="bg-emerald-950/45 border-2 border-emerald-500/45 rounded-2xl p-4 sm:p-5 flex items-center justify-between gap-3 shadow-md shadow-emerald-950/20">
+        <div class="space-y-1 min-w-0">
+          <span class="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-emerald-400">
+            Total Plot Price
+          </span>
+          <span id="rightSubAreaSqft" class="block text-[11px] sm:text-xs font-mono font-semibold text-emerald-200/80 leading-snug">
+            For 1 Katha 4 Chatak (900 sq.ft)
+          </span>
+        </div>
+
+        <div class="text-right space-y-0.5 shrink-0">
+          <div id="rightResTotalLandPriceLakh" class="text-xl sm:text-3xl font-extrabold font-mono tabular-nums text-white tracking-tight">
+            ₹ 31.25 Lakh
+          </div>
+          <div id="rightResTotalLandPriceExact" class="text-xs sm:text-sm font-mono tabular-nums font-semibold text-emerald-300">
+            ₹ 31,25,000
+          </div>
+        </div>
+      </div>
+
+      <!-- BOX 3 (Chatak Result): Price per Chatak (45 sq.ft) -->
+      <div class="bg-slate-950/65 border border-slate-800 rounded-2xl p-3.5 sm:p-5 flex items-center justify-between gap-3">
+        <div class="space-y-1 min-w-0">
+          <span class="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400">
+            Price per Chatak
+          </span>
+          <span class="block text-[11px] sm:text-xs font-mono font-semibold text-slate-500">
+            45 sq.ft
+          </span>
+        </div>
+
+        <div class="text-right space-y-0.5 shrink-0">
+          <div id="rightResChatak45Lakh" class="text-lg sm:text-2xl font-extrabold font-mono tabular-nums text-slate-100 tracking-tight">
+            ₹ 1.56 Lakh
+          </div>
+          <div id="rightResChatak45Exact" class="text-xs sm:text-sm font-mono tabular-nums font-medium text-slate-400">
+            ₹ 1,56,250
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================== -->
+    <!-- TAB 3: RATE (DARK ROSE THEME — 3 STACKED BOXES)            -->
+    <!-- ========================================================== -->
+    <section id="mainPanelKatha" class="hidden tab-panel-animate bg-slate-900 rounded-2xl sm:rounded-3xl border border-rose-500/25 p-3.5 sm:p-6 shadow-xl shadow-black/30 space-y-3.5 sm:space-y-4">
+      <div class="flex items-center justify-between gap-2 pb-0.5">
+        <h2 class="text-base sm:text-lg font-bold text-slate-50 tracking-tight">Rate</h2>
+        <button type="button" onclick="switchMainTab('area')" title="Click to edit Area"
+          class="inline-flex items-center gap-1.5 text-[11px] sm:text-xs font-semibold text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 px-2.5 sm:px-3 py-1.5 rounded-full transition-colors cursor-pointer max-w-[75%]">
+          <span id="areaPillKatha" class="truncate">1 Katha 4 Chatak · 900 sq.ft</span>
+          <i class="fa-solid fa-pen text-[9px] sm:text-[10px] opacity-80 shrink-0"></i>
+        </button>
+      </div>
+
+      <!-- BOX 1 (Input Box): Total Plot Price -->
+      <div class="bg-slate-950/65 border border-slate-800 rounded-2xl p-3.5 sm:p-5 space-y-2.5">
+        <div class="flex justify-between items-center gap-2">
+          <label for="inputTotalLakhs" class="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400">
+            Total Plot Price
+          </label>
+          <span id="badgeTotalRupeesLeft" class="text-[11px] sm:text-xs font-mono tabular-nums font-bold text-rose-300 bg-rose-500/10 border border-rose-500/25 px-2 sm:px-2.5 py-0.5 rounded-md truncate">
+            ₹ 31,25,000
+          </span>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-2.5">
+          <button type="button" onclick="adjustInputBy('inputTotalLakhs', -1)" aria-label="Decrease Total Plot Price by 1 Lakh"
+            class="w-12 sm:w-14 min-h-[48px] py-2.5 rounded-xl bg-slate-800 border border-slate-700 hover:border-rose-500/50 hover:bg-rose-950/60 active:scale-95 text-slate-100 hover:text-rose-300 font-mono text-sm sm:text-base font-bold transition-all cursor-pointer select-none shrink-0">
+            -1
+          </button>
+
+          <div class="relative flex-1 min-w-0">
+            <input id="inputTotalLakhs" type="number" inputmode="decimal" step="any" min="0" value="31.25" placeholder="31.25" oninput="calculateAll()"
+              class="no-spinner w-full min-w-0 bg-slate-900 text-white pl-3 pr-14 sm:pr-16 py-2.5 sm:py-3 rounded-xl border border-slate-700 font-mono tabular-nums text-lg sm:text-xl font-extrabold text-center focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/25" />
+            <span class="absolute right-2.5 sm:right-3 top-1/2 -translate-y-1/2 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-rose-300 bg-rose-500/15 border border-rose-500/30 px-1.5 sm:px-2 py-0.5 rounded-md pointer-events-none">
+              Lakh
+            </span>
+          </div>
+
+          <button type="button" onclick="adjustInputBy('inputTotalLakhs', 1)" aria-label="Increase Total Plot Price by 1 Lakh"
+            class="w-12 sm:w-14 min-h-[48px] py-2.5 rounded-xl bg-slate-800 border border-slate-700 hover:border-rose-500/50 hover:bg-rose-950/60 active:scale-95 text-slate-100 hover:text-rose-300 font-mono text-sm sm:text-base font-bold transition-all cursor-pointer select-none shrink-0">
+            +1
+          </button>
+        </div>
+      </div>
+
+      <!-- BOX 2 (Primary Result — Rose Highlighted): Price per Katha -->
+      <div class="bg-rose-950/45 border-2 border-rose-500/45 rounded-2xl p-4 sm:p-5 flex items-center justify-between gap-3 shadow-md shadow-rose-950/20">
+        <div class="space-y-1 min-w-0">
+          <span class="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-rose-400">
+            Price per Katha
+          </span>
+          <span class="block text-[11px] sm:text-xs font-mono font-semibold text-rose-200/80">
+            720 sq.ft
+          </span>
+        </div>
+
+        <div class="text-right space-y-0.5 shrink-0">
+          <div id="leftResPricePerKathaLakh" class="text-xl sm:text-3xl font-extrabold font-mono tabular-nums text-white tracking-tight">
+            ₹ 25.00 Lakh
+          </div>
+          <div id="leftResPricePerKathaExact" class="text-xs sm:text-sm font-mono tabular-nums font-semibold text-rose-300">
+            ₹ 25,00,000
+          </div>
+        </div>
+      </div>
+
+      <!-- BOX 3 (Chatak Result): Price per Chatak (45 sq.ft) -->
+      <div class="bg-slate-950/65 border border-slate-800 rounded-2xl p-3.5 sm:p-5 flex items-center justify-between gap-3">
+        <div class="space-y-1 min-w-0">
+          <span class="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-400">
+            Price per Chatak
+          </span>
+          <span class="block text-[11px] sm:text-xs font-mono font-semibold text-slate-500">
+            45 sq.ft
+          </span>
+        </div>
+
+        <div class="text-right space-y-0.5 shrink-0">
+          <div id="leftResChatak45Lakh" class="text-lg sm:text-2xl font-extrabold font-mono tabular-nums text-slate-100 tracking-tight">
+            ₹ 1.56 Lakh
+          </div>
+          <div id="leftResChatak45Exact" class="text-xs sm:text-sm font-mono tabular-nums font-medium text-slate-400">
+            ₹ 1,56,250
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Application & PWA Logic -->
+  <script>
+    // Fixed Standard Conversion Constants: 1 Katha = 720 Sq.Ft = 16 Chatak, 1 Chatak = 45 Sq.Ft
+    const KATHA_SQFT = 720;
+    const CHATAK_SQFT = 45;
+
+    let activeMainTab = 'area';
+    let activeAreaTab = 'katha';
+    let totalSqft = 900; // Default: 900 sq.ft (1 Katha 4 Chatak = 1.25 Katha = 32*25 + 100)
+
+    // Generate 512x512 App Icon & Dynamic Web App Manifest for Mobile PWA Install
+    function setupPwaManifestAndIcons() {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        if (ctx) {
+          // Rounded dark-blue gradient background
+          const grad = ctx.createLinearGradient(0, 0, 512, 512);
+          grad.addColorStop(0, '#1d4ed8');
+          grad.addColorStop(1, '#0f172a');
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.roundRect(0, 0, 512, 512, 112);
+          ctx.fill();
+
+          // Map pin badge & title
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 170px Inter, system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('PC', 256, 232);
+
+          ctx.fillStyle = '#93c5fd';
+          ctx.font = 'bold 54px Inter, system-ui, sans-serif';
+          ctx.fillText('PlotCalc', 256, 368);
+
+          const iconDataUrl = canvas.toDataURL('image/png');
+          const favEl = document.getElementById('appFavicon');
+          const appleEl = document.getElementById('appleTouchIcon');
+          if (favEl) favEl.href = iconDataUrl;
+          if (appleEl) appleEl.href = iconDataUrl;
+
+          const manifestObj = {
+            name: 'PlotCalc — Land & Plot Calculator',
+            short_name: 'PlotCalc',
+            description: 'Offline Katha, Chatak & Sq.Ft Land Area and Price Calculator',
+            start_url: window.location.href,
+            scope: new URL('./', window.location.href).href,
+            display: 'standalone',
+            orientation: 'portrait',
+            background_color: '#020617',
+            theme_color: '#020617',
+            icons: [
+              {
+                src: iconDataUrl,
+                sizes: '512x512',
+                type: 'image/png',
+                purpose: 'any maskable'
+              }
+            ]
+          };
+
+          const manifestBlob = new Blob([JSON.stringify(manifestObj)], { type: 'application/manifest+json' });
+          const manifestEl = document.getElementById('pwaManifestLink');
+          if (manifestEl) {
+            manifestEl.href = URL.createObjectURL(manifestBlob);
+          }
+        }
+      } catch (err) {
+        // Silently ignore in restricted preview iframes
+      }
+    }
+
+    // Register Offline Service Worker when hosted on GitHub Pages (HTTPS)
+    function registerOfflineServiceWorker() {
+      if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+        navigator.serviceWorker.register('./sw.js').catch(() => {
+          // Service worker registration skipped if sw.js is not present yet
+        });
+      }
+    }
+
+    // Clean decimal precision helper (avoids 1.0000000000000002 artifacts)
+    function cleanFloat(val) {
+      return Math.round((val + Number.EPSILON) * 10000) / 10000;
+    }
+
+    // Format number in Indian numbering system (e.g., 31,25,000)
+    function formatIndianNumber(num, decimals = 0) {
+      if (!isFinite(num) || isNaN(num)) return '0';
+      return num.toLocaleString('en-IN', {
+        maximumFractionDigits: decimals,
+        minimumFractionDigits: decimals
       });
-    })
-  );
-});
+    }
+
+    // Format Rupees into readable Lakh / Crore / Thousand string (e.g., "₹ 31.25 Lakh")
+    function formatSmartRupees(rupees) {
+      if (!isFinite(rupees) || isNaN(rupees) || rupees === 0) return '₹ 0.00';
+      const absVal = Math.abs(rupees);
+      const sign = rupees < 0 ? '- ' : '';
+      if (absVal >= 10000000) {
+        return `${sign}₹ ${(absVal / 10000000).toFixed(2)} Crore`;
+      } else if (absVal >= 100000) {
+        return `${sign}₹ ${(absVal / 100000).toFixed(2)} Lakh`;
+      } else if (absVal >= 1000) {
+        return `${sign}₹ ${(absVal / 1000).toFixed(2)} Thousand`;
+      } else {
+        return `${sign}₹ ${absVal.toFixed(0)}`;
+      }
+    }
+
+    // Update an input's value only if the user is not currently typing in it
+    function setInputIfNotFocused(id, value) {
+      const el = document.getElementById(id);
+      if (el && document.activeElement !== el) {
+        el.value = value;
+      }
+    }
+
+    // Trigger subtle pulse micro-animation when a primary result value changes
+    function updateWithPulse(elementId, newText) {
+      const el = document.getElementById(elementId);
+      if (!el) return;
+      if (el.textContent !== newText) {
+        el.textContent = newText;
+        el.classList.remove('value-pulse');
+        void el.offsetWidth;
+        el.classList.add('value-pulse');
+      }
+    }
+
+    // Decompose Total Sq.Ft into { katha, chatak, remSqft } using 1 Chatak = 45 sq.ft
+    function decomposeSqft(sqftVal) {
+      const safeSqft = Math.max(0, sqftVal);
+      const katha = Math.floor((safeSqft + 1e-9) / KATHA_SQFT);
+      const remAfterKatha = Math.max(0, safeSqft - katha * KATHA_SQFT);
+      const chatak = Math.floor((remAfterKatha + 1e-9) / CHATAK_SQFT);
+      const remSqft = cleanFloat(Math.max(0, remAfterKatha - chatak * CHATAK_SQFT));
+      return { katha, chatak, remSqft };
+    }
+
+    // Format Katha, Chatak & Remainder Sq.Ft into clean string
+    function formatKathaChatakFullString(sqftVal) {
+      const { katha, chatak, remSqft } = decomposeSqft(sqftVal);
+      const cleanRem = remSqft < 0.01 ? 0 : parseFloat(remSqft.toFixed(2));
+      const parts = [];
+      if (katha > 0 || (chatak === 0 && cleanRem === 0)) parts.push(`${katha} Katha`);
+      if (chatak > 0) parts.push(`${chatak} Chatak`);
+      if (cleanRem > 0) parts.push(`${cleanRem} Sq.Ft`);
+      return parts.join(' ');
+    }
+
+    // Switch between the 3 Color-Coded Main Tabs ("Area", "Price", "Rate")
+    function switchMainTab(tabName) {
+      activeMainTab = tabName;
+
+      const bodyEl = document.getElementById('appBody');
+      const pinEl = document.getElementById('headerPinIcon');
+
+      const tabConfigs = {
+        area: {
+          btn: 'mainTabBtnArea',
+          dot: 'tabDotArea',
+          panel: 'mainPanelArea',
+          activeBtnClass: 'bg-blue-600 text-white font-bold shadow-md shadow-blue-600/25 min-h-[46px] py-2.5 px-2 sm:px-4 rounded-xl text-xs sm:text-sm transition-all duration-200 flex items-center justify-center gap-1.5 truncate cursor-pointer',
+          inactiveBtnClass: 'text-slate-400 hover:text-blue-300 hover:bg-blue-950/50 font-semibold min-h-[46px] py-2.5 px-2 sm:px-4 rounded-xl text-xs sm:text-sm transition-all duration-200 flex items-center justify-center gap-1.5 truncate cursor-pointer',
+          inactiveDotClass: 'w-2 h-2 rounded-full bg-blue-400 shrink-0',
+          bodyBgClass: 'font-sans min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top,_rgba(30,58,138,0.22),_transparent_65%)] text-slate-100 pb-[calc(2.5rem+env(safe-area-inset-bottom))] selection:bg-blue-500/30 selection:text-blue-200',
+          pinClass: 'fa-solid fa-location-dot text-blue-400 text-lg sm:text-xl transition-colors duration-300'
+        },
+        total: {
+          btn: 'mainTabBtnTotal',
+          dot: 'tabDotTotal',
+          panel: 'mainPanelTotal',
+          activeBtnClass: 'bg-emerald-600 text-white font-bold shadow-md shadow-emerald-600/25 min-h-[46px] py-2.5 px-2 sm:px-4 rounded-xl text-xs sm:text-sm transition-all duration-200 flex items-center justify-center gap-1.5 truncate cursor-pointer',
+          inactiveBtnClass: 'text-slate-400 hover:text-emerald-300 hover:bg-emerald-950/50 font-semibold min-h-[46px] py-2.5 px-2 sm:px-4 rounded-xl text-xs sm:text-sm transition-all duration-200 flex items-center justify-center gap-1.5 truncate cursor-pointer',
+          inactiveDotClass: 'w-2 h-2 rounded-full bg-emerald-400 shrink-0',
+          bodyBgClass: 'font-sans min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top,_rgba(6,78,59,0.24),_transparent_65%)] text-slate-100 pb-[calc(2.5rem+env(safe-area-inset-bottom))] selection:bg-emerald-500/30 selection:text-emerald-200',
+          pinClass: 'fa-solid fa-location-dot text-emerald-400 text-lg sm:text-xl transition-colors duration-300'
+        },
+        katha: {
+          btn: 'mainTabBtnKatha',
+          dot: 'tabDotKatha',
+          panel: 'mainPanelKatha',
+          activeBtnClass: 'bg-rose-600 text-white font-bold shadow-md shadow-rose-600/25 min-h-[46px] py-2.5 px-2 sm:px-4 rounded-xl text-xs sm:text-sm transition-all duration-200 flex items-center justify-center gap-1.5 truncate cursor-pointer',
+          inactiveBtnClass: 'text-slate-400 hover:text-rose-300 hover:bg-rose-950/50 font-semibold min-h-[46px] py-2.5 px-2 sm:px-4 rounded-xl text-xs sm:text-sm transition-all duration-200 flex items-center justify-center gap-1.5 truncate cursor-pointer',
+          inactiveDotClass: 'w-2 h-2 rounded-full bg-rose-400 shrink-0',
+          bodyBgClass: 'font-sans min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top,_rgba(136,19,55,0.24),_transparent_65%)] text-slate-100 pb-[calc(2.5rem+env(safe-area-inset-bottom))] selection:bg-rose-500/30 selection:text-rose-200',
+          pinClass: 'fa-solid fa-location-dot text-rose-400 text-lg sm:text-xl transition-colors duration-300'
+        }
+      };
+
+      Object.keys(tabConfigs).forEach((key) => {
+        const cfg = tabConfigs[key];
+        const btnEl = document.getElementById(cfg.btn);
+        const dotEl = document.getElementById(cfg.dot);
+        const panelEl = document.getElementById(cfg.panel);
+        const isActive = key === tabName;
+
+        if (btnEl) btnEl.className = isActive ? cfg.activeBtnClass : cfg.inactiveBtnClass;
+        if (dotEl) dotEl.className = isActive ? 'w-2 h-2 rounded-full bg-white shrink-0' : cfg.inactiveDotClass;
+        if (panelEl) {
+          if (isActive) {
+            panelEl.classList.remove('hidden');
+          } else {
+            panelEl.classList.add('hidden');
+          }
+        }
+      });
+
+      const activeCfg = tabConfigs[tabName];
+      if (activeCfg) {
+        if (bodyEl) bodyEl.className = activeCfg.bodyBgClass;
+        if (pinEl) pinEl.className = activeCfg.pinClass;
+      }
+
+      calculateAll();
+    }
+
+    // Switch between the 3 Area Input Sub-Tabs ("Katha & Chatak", "Direct Sq. Ft.", "Length × Breadth")
+    function switchAreaTab(subTab) {
+      activeAreaTab = subTab;
+
+      const subTabs = {
+        katha: { btn: 'tabBtnKatha', panel: 'panelKatha' },
+        sqft: { btn: 'tabBtnSqft', panel: 'panelSqft' },
+        dim: { btn: 'tabBtnDim', panel: 'panelDim' }
+      };
+
+      Object.keys(subTabs).forEach((key) => {
+        const item = subTabs[key];
+        const btnEl = document.getElementById(item.btn);
+        const panelEl = document.getElementById(item.panel);
+        const isSelected = key === subTab;
+
+        if (btnEl) {
+          btnEl.className = isSelected
+            ? 'area-tab-active min-h-[38px] py-1.5 px-1.5 sm:px-2.5 rounded-lg text-[11px] sm:text-xs transition-all text-center cursor-pointer'
+            : 'area-tab-inactive min-h-[38px] py-1.5 px-1.5 sm:px-2.5 rounded-lg text-[11px] sm:text-xs transition-all text-center cursor-pointer';
+        }
+        if (panelEl) {
+          if (isSelected) {
+            panelEl.classList.remove('hidden');
+          } else {
+            panelEl.classList.add('hidden');
+          }
+        }
+      });
+    }
+
+    // Update Katha/Chatak/Extra helper badges in Sub-Tab 1
+    function updateKathaSubLabels(katha, chatak, extra) {
+      const kSqft = cleanFloat(katha * KATHA_SQFT);
+      const cSqft = cleanFloat(chatak * CHATAK_SQFT);
+      const eSqft = cleanFloat(extra);
+      document.getElementById('kathaSubSqft').textContent = `${formatIndianNumber(kSqft, kSqft % 1 === 0 ? 0 : 2)} sq.ft`;
+      document.getElementById('chatakSubSqft').textContent = `${formatIndianNumber(cSqft, cSqft % 1 === 0 ? 0 : 2)} sq.ft`;
+      document.getElementById('extraSubSqft').textContent = `+ ${formatIndianNumber(eSqft, eSqft % 1 === 0 ? 0 : 2)} sq.ft`;
+    }
+
+    // Synchronize the other two area input modes whenever totalSqft changes
+    function syncOtherAreaInputs(sourceMode) {
+      const safeSqft = Math.max(0, totalSqft);
+
+      if (sourceMode !== 'katha') {
+        const { katha, chatak, remSqft } = decomposeSqft(safeSqft);
+        setInputIfNotFocused('inputKatha', katha);
+        setInputIfNotFocused('inputChatak', chatak);
+        setInputIfNotFocused('inputExtraSqft', remSqft);
+        updateKathaSubLabels(katha, chatak, remSqft);
+      }
+
+      if (sourceMode !== 'sqft') {
+        setInputIfNotFocused('inputTotalSqft', cleanFloat(safeSqft));
+        setInputIfNotFocused('inputDirectExtraSqft', 0);
+      }
+
+      if (sourceMode !== 'dim') {
+        const lenEl = document.getElementById('inputLength');
+        const brdEl = document.getElementById('inputBreadth');
+        const curLen = Math.max(0, parseFloat(lenEl ? lenEl.value : 0) || 0);
+        const curBrd = Math.max(0, parseFloat(brdEl ? brdEl.value : 0) || 0);
+        const curRect = cleanFloat(curLen * curBrd);
+
+        if (safeSqft === 0) {
+          setInputIfNotFocused('inputLength', 0);
+          setInputIfNotFocused('inputBreadth', 0);
+          setInputIfNotFocused('inputDimExtraSqft', 0);
+        } else if (curRect > 0 && curRect <= safeSqft) {
+          setInputIfNotFocused('inputDimExtraSqft', cleanFloat(safeSqft - curRect));
+        } else {
+          setInputIfNotFocused('inputLength', 0);
+          setInputIfNotFocused('inputBreadth', 0);
+          setInputIfNotFocused('inputDimExtraSqft', cleanFloat(safeSqft));
+        }
+      }
+    }
+
+    // Handler for Sub-Tab 1: Katha, Chatak & Extra Sq.Ft
+    function onKathaInputChange() {
+      const katha = Math.max(0, parseFloat(document.getElementById('inputKatha').value) || 0);
+      const chatak = Math.max(0, parseFloat(document.getElementById('inputChatak').value) || 0);
+      const extra = Math.max(0, parseFloat(document.getElementById('inputExtraSqft').value) || 0);
+
+      updateKathaSubLabels(katha, chatak, extra);
+      totalSqft = cleanFloat(katha * KATHA_SQFT + chatak * CHATAK_SQFT + extra);
+      syncOtherAreaInputs('katha');
+      calculateAll();
+    }
+
+    // Handler for Sub-Tab 2: Direct Base Sq.Ft & Extra Sq.Ft
+    function onDirectSqftChange() {
+      const baseSqft = Math.max(0, parseFloat(document.getElementById('inputTotalSqft').value) || 0);
+      const extraSqft = Math.max(0, parseFloat(document.getElementById('inputDirectExtraSqft').value) || 0);
+
+      totalSqft = cleanFloat(baseSqft + extraSqft);
+      syncOtherAreaInputs('sqft');
+      calculateAll();
+    }
+
+    // Handler for Sub-Tab 3: Length × Breadth + Extra Sq.Ft
+    function onDimensionChange() {
+      const length = Math.max(0, parseFloat(document.getElementById('inputLength').value) || 0);
+      const breadth = Math.max(0, parseFloat(document.getElementById('inputBreadth').value) || 0);
+      const extra = Math.max(0, parseFloat(document.getElementById('inputDimExtraSqft').value) || 0);
+
+      totalSqft = cleanFloat(length * breadth + extra);
+      syncOtherAreaInputs('dim');
+      calculateAll();
+    }
+
+    // Stepper (+/-) handler for Area fields
+    function stepAreaField(inputId, delta, sourceMode) {
+      const inputEl = document.getElementById(inputId);
+      if (!inputEl) return;
+      const currentVal = parseFloat(inputEl.value) || 0;
+      const nextVal = cleanFloat(Math.max(0, currentVal + delta));
+      inputEl.value = nextVal;
+
+      if (sourceMode === 'katha') {
+        onKathaInputChange();
+      } else if (sourceMode === 'sqft') {
+        onDirectSqftChange();
+      } else if (sourceMode === 'dim') {
+        onDimensionChange();
+      }
+    }
+
+    // Stepper (-1 / +1 Lakh) handler for Price & Rate tabs
+    function adjustInputBy(inputId, delta) {
+      const inputEl = document.getElementById(inputId);
+      if (!inputEl) return;
+      const currentVal = parseFloat(inputEl.value) || 0;
+      const nextVal = cleanFloat(Math.max(0, currentVal + delta));
+      inputEl.value = nextVal;
+      calculateAll();
+    }
+
+    // Master Calculation & DOM Update Function
+    function calculateAll() {
+      const safeSqft = Math.max(0, totalSqft);
+      const decimalKatha = safeSqft / KATHA_SQFT;
+      const kathaChatakStr = formatKathaChatakFullString(safeSqft);
+      const cleanSqftStr = formatIndianNumber(safeSqft, safeSqft % 1 === 0 ? 0 : 2);
+      const cleanDecKathaStr = `${parseFloat(decimalKatha.toFixed(4))} Katha`;
+      const areaPillText = `${kathaChatakStr} · ${cleanSqftStr} sq.ft`;
+
+      // 1. Update Tab 1 Summary Bar & Clickable Area Pills on Tabs 2 and 3
+      document.getElementById('summaryTotalSqft').textContent = cleanSqftStr;
+      document.getElementById('summaryKathaChatak').textContent = kathaChatakStr;
+      document.getElementById('summaryDecimalKatha').textContent = `(${cleanDecKathaStr})`;
+      document.getElementById('areaPillTotal').textContent = areaPillText;
+      document.getElementById('areaPillKatha').textContent = areaPillText;
+      document.getElementById('rightSubAreaSqft').textContent = `For ${kathaChatakStr} (${cleanSqftStr} sq.ft)`;
+
+      // 2. Update Tab 2 ("Price"): Price per Katha -> Total Plot Price & Price per Chatak
+      const rateLakhsInput = Math.max(0, parseFloat(document.getElementById('inputRatePerKathaLakhs').value) || 0);
+      const ratePerKathaRupeesRight = rateLakhsInput * 100000;
+
+      document.getElementById('badgeRateRupeesRight').textContent = `₹ ${formatIndianNumber(ratePerKathaRupeesRight, 0)} / Katha`;
+
+      const rightPricePerSqft = ratePerKathaRupeesRight / KATHA_SQFT;
+      const rightTotalLandPrice = rightPricePerSqft * safeSqft;
+      const rightPriceChatak45 = rightPricePerSqft * CHATAK_SQFT;
+
+      updateWithPulse('rightResTotalLandPriceLakh', formatSmartRupees(rightTotalLandPrice));
+      document.getElementById('rightResTotalLandPriceExact').textContent = `₹ ${formatIndianNumber(rightTotalLandPrice, 0)}`;
+
+      updateWithPulse('rightResChatak45Lakh', formatSmartRupees(rightPriceChatak45));
+      document.getElementById('rightResChatak45Exact').textContent = `₹ ${formatIndianNumber(rightPriceChatak45, 0)}`;
+
+      // 3. Update Tab 3 ("Rate"): Total Plot Price -> Price per Katha & Price per Chatak
+      const totalLakhsInput = Math.max(0, parseFloat(document.getElementById('inputTotalLakhs').value) || 0);
+      const totalRupeesLeft = totalLakhsInput * 100000;
+
+      document.getElementById('badgeTotalRupeesLeft').textContent = `₹ ${formatIndianNumber(totalRupeesLeft, 0)}`;
+
+      let leftPricePerKatha = 0;
+      let leftPriceChatak45 = 0;
+
+      if (safeSqft > 0) {
+        const leftPricePerSqft = totalRupeesLeft / safeSqft;
+        leftPricePerKatha = leftPricePerSqft * KATHA_SQFT;
+        leftPriceChatak45 = leftPricePerSqft * CHATAK_SQFT;
+      }
+
+      updateWithPulse('leftResPricePerKathaLakh', formatSmartRupees(leftPricePerKatha));
+      document.getElementById('leftResPricePerKathaExact').textContent = `₹ ${formatIndianNumber(leftPricePerKatha, 0)}`;
+
+      updateWithPulse('leftResChatak45Lakh', formatSmartRupees(leftPriceChatak45));
+      document.getElementById('leftResChatak45Exact').textContent = `₹ ${formatIndianNumber(leftPriceChatak45, 0)}`;
+    }
+
+    // Initialize values & PWA setup on load
+    window.onload = function () {
+      setupPwaManifestAndIcons();
+      registerOfflineServiceWorker();
+      calculateAll();
+    };
+  </script>
+</body>
+</html>
